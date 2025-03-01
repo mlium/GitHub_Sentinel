@@ -1,90 +1,108 @@
+# main.py
 import sys
+import os
+from dotenv import load_dotenv
 from subscriptions.subscription_manager import SubscriptionManager
 from updater.fetch_updates import fetch_updates
-from notifier.notification_manager import NotificationManager
-from report_generator.report_manager import ReportManager
+from notifier.notification_manager import send_notification
 
 def handle_add_subscription(repo_url):
-    subscription_manager = SubscriptionManager()
-    result = subscription_manager.add_subscription(repo_url)
-    print(f"Added repository: {repo_url}")
+    manager = SubscriptionManager()
+    result = manager.add_subscription(repo_url)
+    print(result)
 
 def handle_remove_subscription(repo_url):
-    subscription_manager = SubscriptionManager()
-    result = subscription_manager.remove_subscription(repo_url)
-    print(f"Removed repository: {repo_url}")
-
-def handle_update_subscriptions():
-    subscription_manager = SubscriptionManager()
-    notification_manager = NotificationManager()
-    report_manager = ReportManager()
-    
-    # 获取订阅仓库并更新
-    subscriptions = subscription_manager.get_subscriptions()
-    for repo_url in subscriptions:
-        fetch_updates(repo_url)  # 即时抓取更新
-    # 发送通知
-    notification_manager.send_daily_notifications()
-    # 生成报告
-    report_manager.generate_daily_report()
-    print("Updates completed and notifications sent.")
+    manager = SubscriptionManager()
+    result = manager.remove_subscription(repo_url)
+    print(result)
 
 def handle_list_subscriptions():
-    subscription_manager = SubscriptionManager()
-    subscriptions = subscription_manager.get_subscriptions()
-    if subscriptions:
-        print("\nCurrent subscriptions:")
-        for repo in subscriptions:
-            print(repo)
+    manager = SubscriptionManager()
+    subs = manager.get_subscriptions()
+    if subs:
+        print("Current subscriptions:")
+        for repo in subs:
+            print(f"- {repo}")
     else:
-        print("\nNo active subscriptions.")
+        print("No subscriptions.")
+
+def handle_update():
+    """处理更新命令，获取更新并生成报告"""
+    try:
+        # 获取订阅列表
+        subscription_manager = SubscriptionManager()
+        subscriptions = subscription_manager.get_subscriptions()
+        
+        if not subscriptions:
+            print("No subscriptions to update.")
+            return
+        
+        # 获取更新并生成报告
+        results = fetch_updates(subscriptions)
+        
+        # 处理结果
+        for repo, result in results.items():
+            if result['status'] == 'success':
+                print(f"Successfully generated report for {repo}: {result['report_path']}")
+                # 发送通知
+                send_notification(f"已生成 {repo} 的每日报告", f"报告路径: {result['report_path']}")
+            else:
+                print(f"Failed to process {repo}: {result['error']}")
+                send_notification(f"处理 {repo} 时出错", f"错误信息: {result['error']}")
+    
+    except Exception as e:
+        error_msg = f"Error during update: {str(e)}"
+        print(error_msg)
+        send_notification("更新过程出错", error_msg)
 
 def show_help():
-    print("""
-GitHub Sentinel - A tool for managing GitHub repository subscriptions
+    help_text = """
+GitHub Sentinel v0.2 CLI Commands:
+  add <repo_url>        Add a new repository subscription (format: owner/repo).
+  remove <repo_url>     Remove an existing repository subscription.
+  list                  List current repository subscriptions.
+  update                Fetch updates for all subscriptions and generate daily reports.
+  help                  Show this help message.
+  exit                  Exit the tool.
+"""
+    print(help_text)
 
-Usage:
-  add <repository-url>         Add a new GitHub repository to track
-  remove <repository-url>      Remove a GitHub repository from tracking
-  update                      Fetch updates for all subscribed repositories and send notifications
-  list                        List all currently subscribed repositories
-  help                        Show this help message
-  exit                        Exit the tool
-""")
-
-def process_command(command):
-    if command[0] == "add" and len(command) == 2:
-        handle_add_subscription(command[1])
-    elif command[0] == "remove" and len(command) == 2:
-        handle_remove_subscription(command[1])
-    elif command[0] == "update" and len(command) == 1:
-        handle_update_subscriptions()
-    elif command[0] == "list" and len(command) == 1:
+def process_command(command_line):
+    parts = command_line.split()
+    if not parts:
+        return
+    command = parts[0]
+    args = parts[1:]
+    
+    if command == "add" and len(args) == 1:
+        handle_add_subscription(args[0])
+    elif command == "remove" and len(args) == 1:
+        handle_remove_subscription(args[0])
+    elif command == "list":
         handle_list_subscriptions()
-    elif command[0] == "help" and len(command) == 1:
+    elif command == "update":
+        handle_update()
+    elif command == "help":
         show_help()
-    elif command[0] == "exit" and len(command) == 1:
+    elif command == "exit":
         print("Exiting GitHub Sentinel.")
         sys.exit(0)
     else:
         print("Unknown command. Type 'help' for available commands.")
 
 def interactive_cli():
-    print("Welcome to GitHub Sentinel! Type 'help' for available commands.")
+    # 加载环境变量
+    load_dotenv()
+    
+    print("Welcome to GitHub Sentinel v0.2!")
+    show_help()
     while True:
         try:
-            # 等待用户输入命令
-            command_input = input("\n$ ").strip()
-            if command_input:
-                command = command_input.split()
-                process_command(command)
+            command_line = input("$ ").strip()
+            process_command(command_line)
         except KeyboardInterrupt:
             print("\nExiting GitHub Sentinel.")
             sys.exit(0)
 
-def main():
-    # 启动交互式 CLI
-    interactive_cli()
-
 if __name__ == "__main__":
-    main()
+    interactive_cli()
